@@ -1,25 +1,39 @@
 package finalproject;
 
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.Canvas;
+import java.awt.Color;
+import java.awt.Graphics;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.awt.geom.Line2D;
 import java.awt.geom.Point2D;
 import java.awt.image.BufferStrategy;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Hashtable;
+import java.util.Random;
 
-import javax.swing.*;
+import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
 
 public class RaycastEngine implements Runnable {
     private static final int WIDTH = 660, HEIGHT = 660; //Screen Width & Height
-    private static final int FOV = 60, MOVE_SPEED = 2, ROT_SPEED = 3;
+    private static int FOV = 60, MOVE_SPEED = 4, ROT_SPEED = 3;
     private static int x = 100, y = 100;
     private static double deltaX, deltaY;
     private double angle = 0;
+    //private double viewBob = 0.0, vbControl = 0;
 
     private static Canvas canvas;
     private final Canvas displayCanv;
-
+    private final Color fogColor = new Color(0,0,0); //5/17
+    //this creates a really subtle but nice fog effect that greatly effects the atmosphere of the game
+    
+    private final double FOG_PERCENT = 0.6;
     private static final ArrayList<Line2D.Double> lines = new ArrayList<>(); //arraylist for all lines on screen (NOT rays)
     private static ArrayList<Ray> rays = new ArrayList<>();
 
@@ -60,9 +74,10 @@ public class RaycastEngine implements Runnable {
         display.setFocusable(true);
         frame.addKeyListener(new KeyPressManager());
         display.addKeyListener(new KeyPressManager());
+        int response = JOptionPane.showConfirmDialog(null, "Would you like to see the 2D visualization as well?", "HEY!!!", JOptionPane.YES_NO_OPTION);
         canvas.setFocusable(false);
         displayCanv.setFocusable(false);
-
+        
         frame.setLocationRelativeTo(null);
         display.setLocationRelativeTo(null);
         display.setVisible(true);
@@ -71,7 +86,7 @@ public class RaycastEngine implements Runnable {
         generateMaze(0, 0);
         makeLines();
         frame.pack();
-        frame.setVisible(true);
+        if(response==0) frame.setVisible(true); //5/18
 
         new Thread(this).start();
     } //RaycastEngine
@@ -88,12 +103,17 @@ public class RaycastEngine implements Runnable {
      * Run thread, draw on canvas unless lines are being changed (see stateChanged)
      */
     @Override
-    @SuppressWarnings("InfiniteLoopStatement")
+    //@SuppressWarnings("InfiniteLoopStatement")
     public void run() {
         while (true) {
             if (!creatingLines) {
                 draw();
             }
+//            if(MOVE_UP||MOVE_DOWN) {
+//            viewBob = Math.sin(Math.toRadians(vbControl));
+//            vbControl += 0.5;
+//            }
+            
         }
     } //run
 
@@ -153,7 +173,7 @@ public class RaycastEngine implements Runnable {
         }
         Graphics g2 = buffStrat2.getDrawGraphics();
         int i = 0;
-        g2.setColor(new Color(66, 135, 245));
+        g2.setColor(new Color(30,0,30));
         g2.fillRect(0, 0, displayCanv.getWidth(), displayCanv.getHeight());
 
         for (Ray ray : rays) {
@@ -167,20 +187,28 @@ public class RaycastEngine implements Runnable {
             double height = (40 * HEIGHT) / dist;
             if (height > 600)
                 height = 600;
-            g2.setColor(new Color(0, color, 0)); //made it green because the human eye can see the most shades of green out of any color
+            
+            color = (int)((1-FOG_PERCENT) * color + FOG_PERCENT * fogColor.getGreen());
+            //(int)(FOG_PERCENT * fogColor.getRed()), (int)((1-FOG_PERCENT) * color + FOG_PERCENT * fogColor.getGreen()), (int)(FOG_PERCENT * fogColor.getBlue())
+            g2.setColor(new Color(color,0,color)); //made it green because the human eye can see the most shades of green out of any color
             g2.fillRect(i * 11, displayCanv.getHeight() / 2 - (int) height / 2, 11, (int) height);
             //Floor casting (we don't really need to cast since we know where the bottom of the floor is
-
-            //Since canvHeight/2 - wallHeight/2 gives us top left corner, then canvHeight/2 + wallHeight/2 should give bottom corner
 
             //g2.setColor(Color.gray);
             //g2.fillRect(i*11, displayCanv.getHeight()/2 + (int)height/2, 11, (int)height);
             // ^ this first attempt at a solution actually produced a pretty cool effect where it felt like you were standing on a glass platform in between the two sides of the walls
 
             int start = displayCanv.getHeight()/2 + (int)height/2; //600 / 2
-            g2.setColor(Color.DARK_GRAY);
+            //color = (color >> 1) & 8355711;
+            //g2.setColor(new Color(color,0,color));
+            // ^ these 2 lines also create a really cool effect that should be tried out if you have time
+            g2.setColor(new Color(20,0,20));
             g2.fillRect(i*11,(start),11,(int)(start+ray.distance()));
             //we don't need to ceiling cast since we fill with background color and then draw everything on top although we could , just reverse floor casting
+
+            
+            
+            
             i++;
 
         }
@@ -221,7 +249,11 @@ public class RaycastEngine implements Runnable {
         return rays;
 
     }
-
+    
+    /*
+     * Casts a ray in 2D space from start_x to start_y, and calculates the end of the ray by using cos_dist and sin_dist
+     * returns the length of the ray
+     */
     public static double ray(double start_x, double start_y, double cos_dist, double sin_dist, double line_x, double line_y, double lineEnd_x, double lineEnd_y) {
         double rayEnd_x, rayEnd_y, line1_x, line1_y;
         rayEnd_x = cos_dist - start_x;
@@ -230,14 +262,14 @@ public class RaycastEngine implements Runnable {
         line1_y = lineEnd_y - line_y;
 
         double s, t;
-        double v = -line1_x * rayEnd_y + rayEnd_x * line1_y;
-        s = (-rayEnd_y * (start_x - line_x) + rayEnd_x * (start_y - line_y)) / v;
-        t = (line1_x * (start_y - line_y) - line1_y * (start_x - line_x)) / v;
+        double v = -line1_x * rayEnd_y + rayEnd_x * line1_y; 
+        s = (-rayEnd_y * (start_x - line_x) + rayEnd_x * (start_y - line_y)) / v; //surface parameters
+        t = (line1_x * (start_y - line_y) - line1_y * (start_x - line_x)) / v; //ray parameters
 
         if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
             // Collision detected
-            double x = start_x + (t * rayEnd_x);
-            double y = start_y + (t * rayEnd_y);
+            double x = start_x + (t * rayEnd_x); //end x
+            double y = start_y + (t * rayEnd_y); //end y
 
             return distance(start_x, start_y, x, y);
         }
@@ -246,18 +278,32 @@ public class RaycastEngine implements Runnable {
     }
 
     //Math functions
+    /*
+     * Uses euclidean distance formula to calculate distance from x1,y1 to x2,y2
+     */
     public static double distance(double x1, double y1, double x2, double y2) {
         return Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
     }
-
+    
+    /*
+     * clamps value
+     * ex: clamp(400,10,20) returns 20
+     */
     public static double clamp(double val, double min, double max) {
         return Math.max(min, Math.min(max, val));
     }
 
+    /*
+     * shifts value from 1 range to another
+     * shift(25,0,100,100,200) would remap 25 from 0-100 from 100-200
+     */
     public static double shift(double n, double lower1, double upper1, double lower2, double upper2) {
         return ((n - lower1) / (upper1 - lower1)) * (upper2 - lower2) + lower2;
     }
-
+    
+    /*
+     * rounds angle so its always 0 < angle < 360 (2pi)
+     */
     public static double roundAngle(double ang) {
         if (ang > 359) {
             ang -= 360;
@@ -268,7 +314,11 @@ public class RaycastEngine implements Runnable {
         return ang;
     }
 //end math functions
-
+    
+    /*
+     * Gets the neighbors of a direction, used for maze generation.
+     * Returns HashMap<Direction, Boolean> of each direction, the direction is true if there is a neighbor.
+     */
     public static HashMap<Direction, Boolean> getNeighbors(int x1, int y1) {
         HashMap<Direction, Boolean> hashMap = new HashMap<>();
         hashMap.put(Direction.EAST, false);
@@ -294,22 +344,35 @@ public class RaycastEngine implements Runnable {
         return hashMap;
     }
 
+    /*
+     * if a valid coordinate on the maze
+     */
     private static boolean isValidCoordinate(int x1, int y1) {
         return x1 < dim && y1 < dim && y1 >= 0 && x1 >= 0;
     }
 
+    /*
+     * set maze[y1][x1] to false (no wall)
+     */
     private static void setPath(int x1, int y1) {
         maze[y1][x1] = false;
     }
 
+    /*
+     * if x1,y1, is a valid coordinate, returns true if the position is true ( a wall)
+     */
     private static boolean isWall(int x1, int y1) {
-        if ((0 <= x1 && x1 < dim) && (0 <= y1 && y1 < dim)) {
+        if (isValidCoordinate(x1,y1)) {
             return maze[y1][x1];
         } else {
             return false;
         }
     }
 
+    /*
+     * not quite sure what to call this algorithm,
+     * it was based on recursive backtracking but i made a bunch of modifications in order to actually understand what this function does
+     */
     private static void generateMaze(int x1, int y1) {
         setPath(x1, y1);
         ArrayList<Direction> directions = new ArrayList<>();
@@ -333,6 +396,9 @@ public class RaycastEngine implements Runnable {
         }
     }
 
+    /*
+     * draws the lines represented by the maze array
+     */
     private static void makeLines() {
         lines.add(new Line2D.Double(0, 0, canvas.getWidth(), 0));
         lines.add(new Line2D.Double(0, 0, 0, canvas.getHeight()));
@@ -363,6 +429,9 @@ public class RaycastEngine implements Runnable {
         }
     }
 
+    /*
+     * just represents directions, no real purpose but it makes it a lot easier to read the code
+     */
     private enum Direction {
         NORTH,
         SOUTH,
@@ -370,17 +439,22 @@ public class RaycastEngine implements Runnable {
         WEST
     }
 
+    /*
+     * manages keypresses
+     */
     class KeyPressManager implements KeyListener {
+    	
         @Override
         public void keyPressed(KeyEvent e) {
             if(e.getKeyCode() == KeyEvent.VK_S || e.getKeyCode() == KeyEvent.VK_DOWN) MOVE_DOWN=true;
             if(e.getKeyCode() == KeyEvent.VK_W || e.getKeyCode() == KeyEvent.VK_UP) MOVE_UP=true;
             if(e.getKeyCode() == KeyEvent.VK_D || e.getKeyCode() == KeyEvent.VK_RIGHT) TURN_RIGHT=true;
             if(e.getKeyCode() == KeyEvent.VK_A || e.getKeyCode() == KeyEvent.VK_LEFT) TURN_LEFT=true;
+            if(e.getKeyCode() == KeyEvent.VK_R) x=y=100;
             boolean wallInFront=false,wallBehind = false;
             Line2D.Double behind = new Line2D.Double(x, y, (x - deltaX ),  (y - deltaY ));
             Line2D.Double front = new Line2D.Double(x, y, (x + deltaX ),  (y + deltaY ));
-
+            
 
             for(Line2D.Double line : lines) {
                 if(line.intersectsLine(behind) && !wallBehind) {
@@ -399,7 +473,6 @@ public class RaycastEngine implements Runnable {
             if (MOVE_UP && !wallInFront) {
                 x += deltaX / MOVE_SPEED;
                 y += deltaY / MOVE_SPEED;
-
             }
             if (TURN_RIGHT) {
                 angle += ROT_SPEED;
@@ -418,10 +491,10 @@ public class RaycastEngine implements Runnable {
 
         @Override
         public void keyReleased(KeyEvent e) {
-            if(e.getKeyCode() == KeyEvent.VK_S || e.getKeyCode() == KeyEvent.VK_DOWN) MOVE_DOWN=false;
-            if(e.getKeyCode() == KeyEvent.VK_W || e.getKeyCode() == KeyEvent.VK_UP) MOVE_UP=false;
-            if(e.getKeyCode() == KeyEvent.VK_D || e.getKeyCode() == KeyEvent.VK_RIGHT) TURN_RIGHT=false;
-            if(e.getKeyCode() == KeyEvent.VK_A || e.getKeyCode() == KeyEvent.VK_LEFT) TURN_LEFT=false;
+            if(e.getKeyCode() == KeyEvent.VK_S || e.getKeyCode() == KeyEvent.VK_DOWN) { MOVE_DOWN=false; }
+            if(e.getKeyCode() == KeyEvent.VK_W || e.getKeyCode() == KeyEvent.VK_UP) { MOVE_UP=false; }
+            if(e.getKeyCode() == KeyEvent.VK_D || e.getKeyCode() == KeyEvent.VK_RIGHT) { TURN_RIGHT=false; }
+            if(e.getKeyCode() == KeyEvent.VK_A || e.getKeyCode() == KeyEvent.VK_LEFT) { TURN_LEFT=false; }
         }
 
         @Override
